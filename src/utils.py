@@ -1,17 +1,16 @@
 import os
 import json
 import random
-from datetime import datetime #для лога
+from datetime import datetime  # для лога
 
 import numpy as np
 import torch
 
 
 def set_seed(seed=42):
-'''
-  делаем рандом воспроизводимым
-'''
-
+    '''
+      делаем рандом воспроизводимым
+    '''
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
