@@ -1,4 +1,4 @@
-import torch.nn as nn # слои, nn.Module, Linear
+import torch.nn as nn  # слои, nn.Module, Linear
 from torchvision.models import resnet18, ResNet18_Weights
 
 '''
@@ -31,20 +31,20 @@ class MNISTResNet18(nn.Module):
 
         self.backbone = resnet18(weights=weights)
 
-'''
+        '''
         Первый слой меняем под MNIST:
         было 3 канала (RGB), стало 1 канал (grayscale)
         также делаем более "мягкий" старт для маленьких картинок 28x28
         Я возьму чёрно-белую картинку и прогоню по ней 64 маленьких фильтра размера 3x3.
         Каждый фильтр будет искать какой-то свой шаблон
-'''
-        
+        '''
+
         self.backbone.conv1 = nn.Conv2d(
             in_channels=1,
             out_channels=64,
-            kernel_size=3, 
-            stride=1, # шаг
-            padding=1, #рамка толщиной 1 клетку заполненная нулями
+            kernel_size=3,
+            stride=1,  # шаг
+            padding=1,  # рамка толщиной 1 клетку заполненная нулями
             bias=False,
         )
 
@@ -68,10 +68,8 @@ class MNISTResNet18(nn.Module):
 
             for param in self.backbone.fc.parameters():
                 param.requires_grad = True
-'''
-    Как вход проходит через модель
-'''
 
+    # Как вход проходит через модель
     def forward(self, x):
         logits = self.backbone(x)
         return logits
