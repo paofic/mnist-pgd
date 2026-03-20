@@ -12,57 +12,29 @@ except ImportError:
 
 
 def build_target_labels(labels):
-    """
-    Строит target labels по ТЗ:
-    - если исходный класс не 0 -> target = 0
-    - если исходный класс 0 -> target = 1
-    """
     target_labels = torch.zeros_like(labels)
     target_labels[labels == 0] = 1
     return target_labels
 
 
 def get_model_bounds(mean=MNIST_MEAN, std=MNIST_STD):
-    """
-    Границы допустимых значений после нормализации.
-
-    В обычном пиксельном пространстве изображение лежит в [0, 1].
-    После Normalize(mean, std) границы меняются.
-    """
     lower = (0.0 - mean[0]) / std[0]
     upper = (1.0 - mean[0]) / std[0]
     return lower, upper
 
 
 def clamp_to_valid_range(x, mean=MNIST_MEAN, std=MNIST_STD):
-    """
-    Обрезает значения так, чтобы изображение оставалось допустимым.
-    """
     lower, upper = get_model_bounds(mean=mean, std=std)
     x = torch.clamp(x, min=lower, max=upper)
     return x
 
 
 def project_to_linf_ball(x_adv, x_clean, eps):
-    """
-    Возвращает x_adv обратно в L_inf-шар радиуса eps вокруг x_clean.
-    """
     x_adv = torch.max(torch.min(x_adv, x_clean + eps), x_clean - eps)
     return x_adv
 
 
 def targeted_margin_loss(logits, target_labels):
-    """
-    Более сильная targeted loss.
-
-    Хотим, чтобы logit target-класса был больше всех остальных.
-    Для этого минимизируем:
-
-        loss = max_other_logit - target_logit
-
-    Если loss становится меньше, значит модель сильнее тянется
-    к нужному нам target-классу.
-    """
     batch_size = logits.size(0)
     device = logits.device
 
@@ -90,12 +62,6 @@ def pgd_targeted_attack(
     std=MNIST_STD,
     random_start=True,
 ):
-    """
-    Делает targeted PGD-атаку для одного батча.
-
-    Возвращает:
-    - adv_images: атакованные изображения
-    """
     model.eval()
 
     images = images.to(device)
@@ -128,10 +94,7 @@ def pgd_targeted_attack(
         grad = x_adv.grad.detach()
 
         with torch.no_grad():
-            # Для targeted-атаки минимизируем loss,
-            # поэтому идем ПРОТИВ градиента.
             x_adv = x_adv - alpha * grad.sign()
-
             x_adv = project_to_linf_ball(x_adv, x_clean, eps)
             x_adv = clamp_to_valid_range(x_adv, mean=mean, std=std)
 
@@ -141,9 +104,6 @@ def pgd_targeted_attack(
 
 
 def evaluate_accuracy(model, loader, device):
-    """
-    Считает обычную accuracy на даталоадере.
-    """
     model.eval()
 
     total_correct = 0
@@ -165,11 +125,6 @@ def evaluate_accuracy(model, loader, device):
 
 
 def compute_degradation(clean_accuracy, adv_accuracy):
-    """
-    Считает относительную деградацию.
-
-    degradation = (clean_accuracy - adv_accuracy) / clean_accuracy
-    """
     if clean_accuracy == 0:
         return 0.0
 
@@ -189,22 +144,6 @@ def evaluate_targeted_pgd_attack(
     random_start=True,
     restarts=1,
 ):
-    """
-    Считает метрики модели на targeted PGD-атаке.
-
-    Если restarts > 1, то для каждого объекта выбирается лучший
-    adversarial example среди нескольких случайных стартов.
-
-    Возвращает словарь с:
-    - clean_accuracy
-    - adv_accuracy
-    - degradation
-    - target_hit_rate
-    - eps
-    - alpha
-    - steps
-    - restarts
-    """
     model.eval()
 
     clean_correct = 0
@@ -295,9 +234,6 @@ def log_attack_results(
     seed,
     attack_results,
 ):
-    """
-    Логирует результаты атаки в JSON.
-    """
     record = {
         "stage_name": stage_name,
         "stage_index": stage_index,
