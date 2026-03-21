@@ -1,16 +1,16 @@
 import os
 import json
 import random
-from datetime import datetime  # для лога
+from datetime import datetime
 
 import numpy as np
 import torch
 
 
 def set_seed(seed=42):
-    '''
-      делаем рандом воспроизводимым
-    '''
+    """
+    Фиксируем все источники случайности, чтобы результаты были воспроизводимы.
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -18,7 +18,15 @@ def set_seed(seed=42):
 
 
 def save_json_log(path, record):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    """
+    Дописывает одну запись в JSON-лог (список объектов).
+    Если файл не существует — создаёт его.
+    Если директория не существует — создаёт и её.
+    """
+    # Фикс: dirname может быть пустой строкой если path — просто имя файла
+    dir_name = os.path.dirname(path)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
 
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
@@ -26,6 +34,7 @@ def save_json_log(path, record):
     else:
         data = []
 
+    record = dict(record)  # копируем чтобы не мутировать оригинал
     record["timestamp"] = datetime.now().isoformat(timespec="seconds")
     data.append(record)
 
