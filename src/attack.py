@@ -87,28 +87,11 @@ def pgd_targeted_attack(
     std=MNIST_STD,
     random_start=True,
 ):
-    """
-    Targeted PGD атака (по Madry et al.).
-
-    Параметры:
-    - eps: максимальное допустимое возмущение (в масштабе модели, уже нормализованное)
-    - alpha: шаг за одну итерацию (обычно eps / 4 или eps / steps * 2.5)
-    - steps: количество итераций
-    - random_start: начинать с случайной точки внутри L_inf шара
-
-    Логика:
-    1. Начинаем с x_adv = x_clean + случайный шум (или x_clean)
-    2. На каждом шаге:
-       a. Считаем градиент targeted_margin_loss по x_adv
-       b. Делаем шаг ПРОТИВ градиента (- alpha * sign(grad)) → уменьшаем лосс
-       c. Проецируем обратно в L_inf шар вокруг x_clean
-       d. Зажимаем в допустимый диапазон нормализованных пикселей
-    """
     model.eval()
+    ce_loss = torch.nn.CrossEntropyLoss()
 
     images = images.to(device)
     labels = labels.to(device)
-
     target_labels = build_target_labels(labels).to(device)
     x_clean = images.detach().clone()
 
@@ -124,22 +107,21 @@ def pgd_targeted_attack(
         x_adv = x_adv.detach().requires_grad_(True)
 
         logits = model(x_adv)
-        loss = targeted_margin_loss(logits, target_labels)
 
-        # Обнуляем все накопленные градиенты модели (у неё requires_grad=False, но на всякий случай)
+        # Статья Madry: loss = cross-entropy.
+        # Targeted: минимизируем CE по целевому классу → шаг "-"
+        loss = ce_loss(logits, target_labels)
+
         model.zero_grad()
         loss.backward()
-
         grad = x_adv.grad.detach()
 
         with torch.no_grad():
-            # Шаг ПРОТИВ градиента — минимизируем targeted_margin_loss
             x_adv = x_adv - alpha * grad.sign()
             x_adv = project_to_linf_ball(x_adv, x_clean, eps)
             x_adv = clamp_to_valid_range(x_adv, mean=mean, std=std)
 
     return x_adv.detach()
-
 
 def evaluate_targeted_pgd_attack(
     model,
