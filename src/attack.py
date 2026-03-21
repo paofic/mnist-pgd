@@ -12,36 +12,61 @@ except ImportError:
 
 
 def build_target_labels(labels):
+    """
+    По ТЗ:
+    - для всех классов, кроме 0 → цель = 0
+    - для класса 0 → цель = 1
+    """
     target_labels = torch.zeros_like(labels)
     target_labels[labels == 0] = 1
     return target_labels
 
 
 def get_model_bounds(mean=MNIST_MEAN, std=MNIST_STD):
+    """
+    Вычисляет допустимый диапазон значений пикселей ПОСЛЕ нормализации.
+    Исходные пиксели [0, 1] → после нормализации [(0-mean)/std, (1-mean)/std]
+    """
     lower = (0.0 - mean[0]) / std[0]
     upper = (1.0 - mean[0]) / std[0]
     return lower, upper
 
 
 def clamp_to_valid_range(x, mean=MNIST_MEAN, std=MNIST_STD):
+    """
+    Зажимает тензор в допустимый диапазон нормализованных пикселей.
+    """
     lower, upper = get_model_bounds(mean=mean, std=std)
-    x = torch.clamp(x, min=lower, max=upper)
-    return x
+    return torch.clamp(x, min=lower, max=upper)
 
 
 def project_to_linf_ball(x_adv, x_clean, eps):
-    x_adv = torch.max(torch.min(x_adv, x_clean + eps), x_clean - eps)
-    return x_adv
+    """
+    Проекция на L_inf шар: x_adv не может отличаться от x_clean более чем на eps
+    по любой координате.
+    """
+    return torch.max(torch.min(x_adv, x_clean + eps), x_clean - eps)
 
 
 def targeted_margin_loss(logits, target_labels):
+    """
+    Targeted margin loss для PGD:
+    Мы хотим, чтобы логит целевого класса был БОЛЬШЕ всех остальных.
+    Минимизируем: max_other_logit - target_logit
+    Когда эта разность отрицательная — атака успешна.
+
+    Почему именно это: атака делает градиентный шаг В СТОРОНУ убывания лосса.
+    Убывание (max_other - target) означает рост target и падение max_other → цель победила.
+    """
     batch_size = logits.size(0)
     device = logits.device
 
     row_ids = torch.arange(batch_size, device=device)
 
+    # Логит целевого класса
     target_logits = logits[row_ids, target_labels]
 
+    # Максимальный логит среди всех ОСТАЛЬНЫХ классов
     other_logits = logits.clone()
     other_logits[row_ids, target_labels] = float("-inf")
     max_other_logits = other_logits.max(dim=1).values
@@ -62,13 +87,29 @@ def pgd_targeted_attack(
     std=MNIST_STD,
     random_start=True,
 ):
+    """
+    Targeted PGD атака (по Madry et al.).
+
+    Параметры:
+    - eps: максимальное допустимое возмущение (в масштабе модели, уже нормализованное)
+    - alpha: шаг за одну итерацию (обычно eps / 4 или eps / steps * 2.5)
+    - steps: количество итераций
+    - random_start: начинать с случайной точки внутри L_inf шара
+
+    Логика:
+    1. Начинаем с x_adv = x_clean + случайный шум (или x_clean)
+    2. На каждом шаге:
+       a. Считаем градиент targeted_margin_loss по x_adv
+       b. Делаем шаг ПРОТИВ градиента (- alpha * sign(grad)) → уменьшаем лосс
+       c. Проецируем обратно в L_inf шар вокруг x_clean
+       d. Зажимаем в допустимый диапазон нормализованных пикселей
+    """
     model.eval()
 
     images = images.to(device)
     labels = labels.to(device)
 
     target_labels = build_target_labels(labels).to(device)
-
     x_clean = images.detach().clone()
 
     if random_start:
@@ -80,56 +121,24 @@ def pgd_targeted_attack(
         x_adv = x_clean.clone()
 
     for _ in range(steps):
-        x_adv.requires_grad_(True)
+        x_adv = x_adv.detach().requires_grad_(True)
 
         logits = model(x_adv)
         loss = targeted_margin_loss(logits, target_labels)
 
+        # Обнуляем все накопленные градиенты модели (у неё requires_grad=False, но на всякий случай)
         model.zero_grad()
-        if x_adv.grad is not None:
-            x_adv.grad.zero_()
-
         loss.backward()
 
         grad = x_adv.grad.detach()
 
         with torch.no_grad():
+            # Шаг ПРОТИВ градиента — минимизируем targeted_margin_loss
             x_adv = x_adv - alpha * grad.sign()
             x_adv = project_to_linf_ball(x_adv, x_clean, eps)
             x_adv = clamp_to_valid_range(x_adv, mean=mean, std=std)
 
-        x_adv = x_adv.detach()
-
-    return x_adv
-
-
-def evaluate_accuracy(model, loader, device):
-    model.eval()
-
-    total_correct = 0
-    total_samples = 0
-
-    with torch.no_grad():
-        for images, labels in loader:
-            images = images.to(device)
-            labels = labels.to(device)
-
-            logits = model(images)
-            predictions = logits.argmax(dim=1)
-
-            total_correct += (predictions == labels).sum().item()
-            total_samples += labels.size(0)
-
-    accuracy = total_correct / total_samples
-    return accuracy
-
-
-def compute_degradation(clean_accuracy, adv_accuracy):
-    if clean_accuracy == 0:
-        return 0.0
-
-    degradation = (clean_accuracy - adv_accuracy) / clean_accuracy
-    return degradation
+    return x_adv.detach()
 
 
 def evaluate_targeted_pgd_attack(
@@ -144,6 +153,15 @@ def evaluate_targeted_pgd_attack(
     random_start=True,
     restarts=1,
 ):
+    """
+    Оценивает targeted PGD атаку на всём датасете.
+
+    Возвращает:
+    - clean_accuracy: точность на чистых примерах
+    - adv_accuracy: точность на adversarial примерах (модель всё ещё права?)
+    - degradation: ОТНОСИТЕЛЬНАЯ деградация = (clean_acc - adv_acc) / clean_acc
+    - target_hit_rate: доля примеров, где модель предсказала именно целевой класс
+    """
     model.eval()
 
     clean_correct = 0
@@ -154,14 +172,15 @@ def evaluate_targeted_pgd_attack(
     for images, labels in loader:
         images = images.to(device)
         labels = labels.to(device)
-
         target_labels = build_target_labels(labels).to(device)
 
+        # Точность на чистых примерах
         with torch.no_grad():
             clean_logits = model(images)
             clean_predictions = clean_logits.argmax(dim=1)
             clean_correct += (clean_predictions == labels).sum().item()
 
+        # Генерируем adversarial примеры (с несколькими перезапусками для надёжности)
         best_adv_images = None
         best_margin = None
 
@@ -181,15 +200,14 @@ def evaluate_targeted_pgd_attack(
 
             with torch.no_grad():
                 adv_logits = model(adv_images)
-
                 row_ids = torch.arange(adv_logits.size(0), device=device)
 
                 target_logits = adv_logits[row_ids, target_labels]
-
                 other_logits = adv_logits.clone()
                 other_logits[row_ids, target_labels] = float("-inf")
                 max_other_logits = other_logits.max(dim=1).values
 
+                # Margin: чем больше, тем успешнее атака на этот пример
                 margin = target_logits - max_other_logits
 
             if best_adv_images is None:
@@ -210,10 +228,12 @@ def evaluate_targeted_pgd_attack(
 
     clean_accuracy = clean_correct / total_samples
     adv_accuracy = adv_correct / total_samples
-    degradation = compute_degradation(clean_accuracy, adv_accuracy)
+
+    # ВАЖНО: деградация считается ОТНОСИТЕЛЬНАЯ по ТЗ
+    degradation = (clean_accuracy - adv_accuracy) / clean_accuracy if clean_accuracy > 0 else 0.0
     target_hit_rate = target_hits / total_samples
 
-    results = {
+    return {
         "clean_accuracy": clean_accuracy,
         "adv_accuracy": adv_accuracy,
         "degradation": degradation,
@@ -223,17 +243,9 @@ def evaluate_targeted_pgd_attack(
         "steps": steps,
         "restarts": restarts,
     }
-    return results
 
 
-def log_attack_results(
-    log_path,
-    stage_name,
-    stage_index,
-    train_size,
-    seed,
-    attack_results,
-):
+def log_attack_results(log_path, stage_name, stage_index, train_size, seed, attack_results):
     record = {
         "stage_name": stage_name,
         "stage_index": stage_index,
@@ -249,6 +261,5 @@ def log_attack_results(
         "steps": attack_results["steps"],
         "restarts": attack_results.get("restarts", 1),
     }
-
     save_json_log(log_path, record)
     return record
