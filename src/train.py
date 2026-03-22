@@ -10,6 +10,11 @@ except ImportError:
 
 
 def train_one_epoch(model, loader, optimizer, criterion, device):
+    """
+    loader — DataLoader, подаёт батчи по 128 картинок
+    optimizer — алгоритм обновления весов (Adam)
+    criterion — функция потерь (CrossEntropyLoss)
+    """
     model.train()
 
     total_loss = 0.0
@@ -19,15 +24,22 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
     for images, labels in loader:
         images = images.to(device)
         labels = labels.to(device)
-
-        optimizer.zero_grad()
+        # labels - числа
+        optimizer.zero_grad() # обнуляем
 
         logits = model(images)
         loss = criterion(logits, labels)
 
-        loss.backward()
-        optimizer.step()
+        loss.backward() # градиенты для всех весов
+        optimizer.step() # шаг по adam через моменты
+        """
+        момент 1 порядка - средний градиент за последние шаги
+        момент 2 порядка - средний квадрат градиента за последние шаги
 
+        шаг = lr * момент_1 / sqrt(момент_2)
+        w_новый = w_старый - шаг
+        """
+        
         batch_size = images.size(0)
 
         total_loss += loss.item() * batch_size
@@ -45,6 +57,12 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
 
 
 def evaluate(model, loader, criterion, device):
+    """
+    оценка качества
+
+    нельзя делать на обучающих данных, делаем на тестовых
+    """
+    
     model.eval()
 
     total_loss = 0.0
@@ -92,8 +110,8 @@ def save_checkpoint(
 
     checkpoint = {
         "epoch": epoch,
-        "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
+        "model_state_dict": model.state_dict(), # все веса
+        "optimizer_state_dict": optimizer.state_dict(), # состояние оптимизатора (моменты)
         "train_loss": train_metrics["loss"],
         "train_accuracy": train_metrics["accuracy"],
         "test_loss": test_metrics["loss"],
@@ -145,7 +163,7 @@ def train_stage(
         )
 
         is_best = test_metrics["accuracy"] > best_test_accuracy
-
+        # флаг стали ли лучше
         if is_best:
             best_test_accuracy = test_metrics["accuracy"]
             best_epoch = epoch
