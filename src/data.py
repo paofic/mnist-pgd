@@ -5,9 +5,10 @@ from torch.utils.data import Subset
 from torchvision import datasets, transforms
 
 '''
-    У MNIST один канал, поэтому mean и std записаны как кортежи из одного числа
+    У MNIST один канал, поэтому mean и std — просто числа.
+    В transforms.Normalize они оборачиваются в кортеж: (MNIST_MEAN,), (MNIST_STD,)
 
-    x_{norm} = frac{x - mean}{std}
+    x_norm = (x - mean) / std
 '''
 
 MNIST_MEAN = 0.1307
