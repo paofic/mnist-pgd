@@ -44,35 +44,10 @@ def project_to_linf_ball(x_adv, x_clean, eps):
     """
     Проекция на L_inf шар: x_adv не может отличаться от x_clean более чем на eps
     по любой координате.
+
+    Мы поэлементно обрабатываем 2 тензора [128, 1, 28, 28] - атакованный и нормальный
     """
     return torch.max(torch.min(x_adv, x_clean + eps), x_clean - eps)
-
-
-def targeted_margin_loss(logits, target_labels):
-    """
-    Targeted margin loss для PGD:
-    Мы хотим, чтобы логит целевого класса был БОЛЬШЕ всех остальных.
-    Минимизируем: max_other_logit - target_logit
-    Когда эта разность отрицательная — атака успешна.
-
-    Почему именно это: атака делает градиентный шаг В СТОРОНУ убывания лосса.
-    Убывание (max_other - target) означает рост target и падение max_other → цель победила.
-    """
-    batch_size = logits.size(0)
-    device = logits.device
-
-    row_ids = torch.arange(batch_size, device=device)
-
-    # Логит целевого класса
-    target_logits = logits[row_ids, target_labels]
-
-    # Максимальный логит среди всех ОСТАЛЬНЫХ классов
-    other_logits = logits.clone()
-    other_logits[row_ids, target_labels] = float("-inf")
-    max_other_logits = other_logits.max(dim=1).values
-
-    loss = (max_other_logits - target_logits).mean()
-    return loss
 
 
 def pgd_targeted_attack(
@@ -87,6 +62,14 @@ def pgd_targeted_attack(
     std=MNIST_STD,
     random_start=True,
 ):
+    """
+    images — оригинальные картинки батча
+    labels — истинные метки
+    eps — максимальное возмущение (в нормализованном масштабе)
+    alpha — шаг одной итерации
+    steps — количество итераций
+    random_start — начинать со случайной точки внутри шара
+    """
     model.eval()
     ce_loss = torch.nn.CrossEntropyLoss()
 
