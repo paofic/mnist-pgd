@@ -10,9 +10,8 @@ from torchvision import datasets, transforms
     x_{norm} = frac{x - mean}{std}
 '''
 
-MNIST_MEAN = (0.1307,)
-MNIST_STD = (0.3081,)
-
+MNIST_MEAN = 0.1307
+MNIST_STD = 0.3081
 
 
 class MNISTStageData:
@@ -45,7 +44,7 @@ def build_mnist_transform():
     """
     return transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize(MNIST_MEAN, MNIST_STD),
+        transforms.Normalize((MNIST_MEAN,), (MNIST_STD,))
     ])
 
 
@@ -90,7 +89,7 @@ def describe_split(labels, split_indices):
         part_labels = labels[indices]
 
         class_counts = {}
-        for cls in unique_classes:
+        for cls in unique_classes: # для класса считаем сколько в текущую часть
             class_counts[int(cls)] = int((part_labels == cls).sum())
 
         result.append(
@@ -131,21 +130,15 @@ def load_mnist_stage_data(
     root = str(Path(root))
     Path(root).mkdir(parents=True, exist_ok=True)
 
-    transform = build_mnist_transform()
+    transform = build_mnist_transform() # создание конвейера
 
     '''
         Dataset — это объект, который умеет:
-
         хранить набор данных;
-
         по индексу возвращать элемент.
-
         Для PyTorch-датасета обычно:
-
         image, label = dataset[i]
-
         То есть dataset — это “коллекция примеров”, с которой можно работать
-        
         как с источником данных.
     '''
 
@@ -181,9 +174,8 @@ def load_mnist_stage_data(
     for indices in cumulative_parts_indices:
         cumulative_parts.append(Subset(train_dataset, indices))
 
-    # Так как модель получает уже нормализованные данные,
-    # epsilon для атаки надо перевести в этот же масштаб.
-    eps_model = eps_raw / MNIST_STD[0]
+
+    eps_model = eps_raw / MNIST_STD
 
     return MNISTStageData(
         train_parts=train_parts,
@@ -200,11 +192,11 @@ def denormalize(x, mean=MNIST_MEAN, std=MNIST_STD):
     """
     Переводит нормализованное изображение обратно в обычное пространство пикселей.
     """
-    return x * std[0] + mean[0]
+    return x * std + mean
 
 
 def renormalize(x, mean=MNIST_MEAN, std=MNIST_STD):
     """
     Снова нормализует изображение.
     """
-    return (x - mean[0]) / std[0]
+    return (x - mean) / std
