@@ -72,6 +72,14 @@ def pgd_targeted_attack(
     """
     model.eval()
     ce_loss = torch.nn.CrossEntropyLoss()
+    """
+    создание функции потерь
+    CrossEntropyLoss принимает логиты модели и правильные метки.
+    Внутри применяет Softmax к логитам — переводит их в вероятности от 0 до 1.
+    Затем берёт вероятность правильного класса и считает: loss = -log(эта вероятность).
+    Чем увереннее модель в правильном классе — тем меньше loss.
+    Возвращает одно число — среднее по всем примерам в батче.
+    """
 
     images = images.to(device)
     labels = labels.to(device)
@@ -80,6 +88,10 @@ def pgd_targeted_attack(
 
     if random_start:
         noise = torch.empty_like(x_clean).uniform_(-eps, eps)
+        """
+        torch.empty_like(x_clean) — пустой тензор того же размера
+        .uniform_(-eps, eps) — заполняем случайными числами от -eps до eps
+        """
         x_adv = x_clean + noise
         x_adv = project_to_linf_ball(x_adv, x_clean, eps)
         x_adv = clamp_to_valid_range(x_adv, mean=mean, std=std)
