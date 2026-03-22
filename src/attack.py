@@ -27,8 +27,8 @@ def get_model_bounds(mean=MNIST_MEAN, std=MNIST_STD):
     Вычисляет допустимый диапазон значений пикселей ПОСЛЕ нормализации.
     Исходные пиксели [0, 1] → после нормализации [(0-mean)/std, (1-mean)/std]
     """
-    lower = (0.0 - mean[0]) / std[0]
-    upper = (1.0 - mean[0]) / std[0]
+    lower = (0.0 - mean) / std
+    upper = (1.0 - mean) / std
     return lower, upper
 
 
