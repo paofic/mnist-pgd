@@ -101,14 +101,20 @@ def pgd_targeted_attack(
     for _ in range(steps):
         x_adv = x_adv.detach().requires_grad_(True)
 
-        logits = model(x_adv)
+        logits = model(x_adv) # возвращает тензор [128, 10] 
 
         # Статья Madry: loss = cross-entropy.
         # Targeted: минимизируем CE по целевому классу → шаг "-"
         loss = ce_loss(logits, target_labels)
+        """
+        ce_loss считает насколько модель не уверена в целевом классе.
+        Применяет Softmax к логитам → берёт вероятность целевого класса → loss = -log(вероятность).
+        Чем увереннее модель в целевом классе — тем меньше loss.
+        Наша цель: минимизировать этот loss → модель думает что видит целевой класс.
+        """
 
-        model.zero_grad()
-        loss.backward()
+        model.zero_grad() # обнуляем градиенты
+        loss.backward() # 
         grad = x_adv.grad.detach()
 
         with torch.no_grad():
@@ -146,7 +152,7 @@ def evaluate_targeted_pgd_attack(
     target_hits = 0
     total_samples = 0
 
-    for images, labels in loader:
+    for images, labels in loader: # цикл по батчам из 128
         images = images.to(device)
         labels = labels.to(device)
         target_labels = build_target_labels(labels).to(device)
